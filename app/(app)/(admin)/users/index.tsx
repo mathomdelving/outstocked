@@ -81,26 +81,44 @@ export default function AdminUsersScreen() {
   }
 
   const handleInviteUser = async () => {
+    if (!inviteEmail.trim()) {
+      alert('Please enter an email address')
+      return
+    }
+
     if (!profile?.organization_id) {
       alert('Organization not found')
       return
     }
 
-    // Generate simple invite link - no magic link needed
-    const inviteLink = `https://outstocked.vercel.app/invite?org=${profile.organization_id}`
+    setInviting(true)
+    try {
+      // Send magic link email
+      const { error } = await supabase.auth.signInWithOtp({
+        email: inviteEmail.trim(),
+        options: {
+          data: {
+            organization_id: profile.organization_id,
+            display_name: inviteDisplayName.trim() || null,
+            invited_role: inviteRole,
+          },
+          emailRedirectTo: `https://outstocked.vercel.app/invite?org=${profile.organization_id}`
+        },
+      })
 
-    // Copy to clipboard
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      await navigator.clipboard.writeText(inviteLink)
-      alert(`Invite link copied!\n\nShare this link with your team member:\n${inviteLink}`)
-    } else {
-      alert(`Share this invite link:\n\n${inviteLink}`)
+      if (error) throw error
+
+      alert(`Invitation sent to ${inviteEmail}!`)
+      setInviteModalVisible(false)
+      setInviteEmail('')
+      setInviteDisplayName('')
+      setInviteRole('user')
+    } catch (error) {
+      console.error('Error inviting user:', error)
+      alert('Failed to send invitation: ' + (error as Error).message)
+    } finally {
+      setInviting(false)
     }
-
-    setInviteModalVisible(false)
-    setInviteEmail('')
-    setInviteDisplayName('')
-    setInviteRole('user')
   }
 
   const handleEditRole = (user: UserProfile) => {
@@ -233,21 +251,52 @@ export default function AdminUsersScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Invite Team Member</Text>
             <Text style={styles.modalSubtitle}>
-              Get an invite link to share with your team. They can use it to create an account and join your organization.
+              They'll receive an email with a link to join.
             </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email Address *</Text>
+              <TextInput
+                style={styles.input}
+                value={inviteEmail}
+                onChangeText={setInviteEmail}
+                placeholder="email@example.com"
+                placeholderTextColor={COLORS.textSecondary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Name (optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={inviteDisplayName}
+                onChangeText={setInviteDisplayName}
+                placeholder="e.g., John Smith"
+                placeholderTextColor={COLORS.textSecondary}
+              />
+            </View>
 
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.modalCancelButton}
-                onPress={() => setInviteModalVisible(false)}
+                onPress={() => {
+                  setInviteModalVisible(false)
+                  setInviteEmail('')
+                  setInviteDisplayName('')
+                }}
               >
                 <Text style={styles.modalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalInviteButton}
+                style={[styles.modalInviteButton, inviting && styles.modalButtonDisabled]}
                 onPress={handleInviteUser}
+                disabled={inviting}
               >
-                <Text style={styles.modalInviteButtonText}>Copy Invite Link</Text>
+                <Text style={styles.modalInviteButtonText}>
+                  {inviting ? 'Sending...' : 'Send Invite'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

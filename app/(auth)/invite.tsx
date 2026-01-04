@@ -18,82 +18,58 @@ import { COLORS } from '@/lib/constants'
 export default function InviteScreen() {
   const params = useLocalSearchParams<{ org: string }>()
 
-  const [org, setOrg] = useState<string | null>(null)
   const [orgName, setOrgName] = useState<string | null>(null)
-  const [loadingOrg, setLoadingOrg] = useState(true)
-  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [loading, setLoading] = useState(true)
   const [linkExpired, setLinkExpired] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [isSignUp, setIsSignUp] = useState(true)
 
-  // Get org ID from URL params and check for Supabase errors in hash
-  useEffect(() => {
-    let orgId = params.org
-
+  // Get org ID - try params first, then URL directly
+  const getOrgId = (): string | null => {
+    if (params.org) return params.org
     if (typeof window !== 'undefined') {
-      // Parse org from URL search params as fallback
-      if (!orgId) {
-        const urlParams = new URLSearchParams(window.location.search)
-        orgId = urlParams.get('org') || undefined
-      }
+      const urlParams = new URLSearchParams(window.location.search)
+      return urlParams.get('org')
+    }
+    return null
+  }
 
-      // Check for Supabase error in hash fragment (e.g., expired link)
+  const org = getOrgId()
+
+  // Initialize: check for errors and fetch org
+  useEffect(() => {
+    // Check for Supabase error in hash (expired link, etc.)
+    if (typeof window !== 'undefined') {
       const hash = window.location.hash
-      if (hash.includes('error=') || hash.includes('error_code=')) {
-        console.log('Supabase error in URL:', hash)
-        if (hash.includes('otp_expired') || hash.includes('access_denied')) {
-          setLinkExpired(true)
-        }
+      if (hash.includes('otp_expired') || hash.includes('access_denied')) {
+        setLinkExpired(true)
       }
     }
 
-    console.log('Org ID found:', orgId)
-    if (orgId) {
-      setOrg(orgId)
-    } else {
-      setLoadingOrg(false)
-    }
-  }, [params.org])
-
-  // Check if user is already authenticated (from magic link)
-  useEffect(() => {
-    async function checkAuth() {
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (session?.user) {
-        console.log('User already authenticated')
-      }
-
-      setCheckingAuth(false)
-    }
-
-    checkAuth()
-  }, [])
-
-  // Fetch organization name when we have org ID
-  useEffect(() => {
-    if (!org) return
-
+    // Fetch organization
     async function fetchOrg() {
-      console.log('Fetching organization:', org)
+      if (!org) {
+        setLoading(false)
+        return
+      }
+
+      console.log('Fetching org:', org)
       const { data, error } = await supabase
         .from('organizations')
         .select('name')
         .eq('id', org)
         .single()
 
-      if (error) {
-        console.error('Error fetching org:', error)
-      }
-
       if (data) {
-        console.log('Found organization:', data.name)
+        console.log('Found org:', data.name)
         setOrgName(data.name)
+      } else {
+        console.error('Org fetch error:', error)
       }
-      setLoadingOrg(false)
+      setLoading(false)
     }
 
     fetchOrg()
@@ -110,7 +86,7 @@ export default function InviteScreen() {
       return
     }
 
-    setLoading(true)
+    setSubmitting(true)
 
     const { error } = await supabase.auth.signUp({
       email,
@@ -124,11 +100,10 @@ export default function InviteScreen() {
     })
 
     if (error) {
-      setLoading(false)
+      setSubmitting(false)
       Alert.alert('Error', error.message)
     }
-    // On success, the onAuthStateChange listener will update state
-    // and the layout redirects will handle navigation automatically
+    // On success, auth state updates and layout redirects automatically
   }
 
   const handleSignIn = async () => {
@@ -137,7 +112,7 @@ export default function InviteScreen() {
       return
     }
 
-    setLoading(true)
+    setSubmitting(true)
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -145,13 +120,12 @@ export default function InviteScreen() {
     })
 
     if (error) {
-      setLoading(false)
+      setSubmitting(false)
       Alert.alert('Error', error.message)
       return
     }
 
-    // If user signed in successfully but isn't in this org, we need to add them
-    // Check if they have a profile for this org
+    // Check if user belongs to a different org
     if (data.user && org) {
       const { data: profile } = await supabase
         .from('user_profiles')
@@ -160,28 +134,25 @@ export default function InviteScreen() {
         .single()
 
       if (profile && profile.organization_id !== org) {
-        // User belongs to a different org - can't join multiple orgs in current design
-        setLoading(false)
+        setSubmitting(false)
         Alert.alert(
           'Already in Organization',
-          'Your account is already associated with another organization. Please use a different email to join this organization.'
+          'Your account is already associated with another organization.'
         )
         await supabase.auth.signOut()
         return
       }
     }
-
-    // On success, the onAuthStateChange listener will update state
-    // and the layout redirects will handle navigation automatically
+    // On success, auth state updates and layout redirects automatically
   }
 
-  if (loadingOrg || checkingAuth) {
+  if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={{ color: COLORS.textSecondary, marginTop: 16 }}>
-            {checkingAuth ? 'Checking your account...' : 'Loading organization...'}
+            Loading...
           </Text>
         </View>
       </SafeAreaView>
@@ -312,12 +283,12 @@ export default function InviteScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.button, submitting && styles.buttonDisabled]}
               onPress={isSignUp ? handleSignUp : handleSignIn}
-              disabled={loading}
+              disabled={submitting}
             >
               <Text style={styles.buttonText}>
-                {loading
+                {submitting
                   ? 'Please wait...'
                   : isSignUp
                   ? `Join ${orgName}`
