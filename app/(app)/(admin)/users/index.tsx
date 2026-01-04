@@ -81,60 +81,26 @@ export default function AdminUsersScreen() {
   }
 
   const handleInviteUser = async () => {
-    if (!inviteEmail.trim()) {
-      alert('Please enter an email address')
-      return
-    }
-
     if (!profile?.organization_id) {
       alert('Organization not found')
       return
     }
 
-    setInviting(true)
-    try {
-      // Use Supabase to invite user by email
-      // This sends a magic link email to the user
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email: inviteEmail.trim(),
-        options: {
-          data: {
-            organization_id: profile.organization_id,
-            organization_name: '', // Will be set from existing org
-            display_name: inviteDisplayName.trim() || null,
-            invited_role: inviteRole,
-          },
-          emailRedirectTo: `https://outstocked.vercel.app/invite?org=${profile.organization_id}`
-        },
-      })
+    // Generate simple invite link - no magic link needed
+    const inviteLink = `https://outstocked.vercel.app/invite?org=${profile.organization_id}`
 
-      if (error) throw error
-
-      // Also create a pending user profile so they appear in the list
-      // The trigger will update this when they actually sign in
-      const { error: profileError } = await supabase.from('user_profiles').insert({
-        id: crypto.randomUUID(), // Temporary ID - will be replaced
-        organization_id: profile.organization_id,
-        email: inviteEmail.trim(),
-        display_name: inviteDisplayName.trim() || inviteEmail.split('@')[0],
-        role: inviteRole,
-      })
-
-      // Ignore profile error - it might fail due to unique constraints
-      // which is fine since the user might already exist
-
-      alert(`Invitation sent to ${inviteEmail}! They will receive an email with a link to join.`)
-      setInviteModalVisible(false)
-      setInviteEmail('')
-      setInviteDisplayName('')
-      setInviteRole('user')
-      await fetchUsers()
-    } catch (error) {
-      console.error('Error inviting user:', error)
-      alert('Failed to send invitation: ' + (error as Error).message)
-    } finally {
-      setInviting(false)
+    // Copy to clipboard
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(inviteLink)
+      alert(`Invite link copied!\n\nShare this link with your team member:\n${inviteLink}`)
+    } else {
+      alert(`Share this invite link:\n\n${inviteLink}`)
     }
+
+    setInviteModalVisible(false)
+    setInviteEmail('')
+    setInviteDisplayName('')
+    setInviteRole('user')
   }
 
   const handleEditRole = (user: UserProfile) => {
@@ -267,91 +233,21 @@ export default function AdminUsersScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Invite Team Member</Text>
             <Text style={styles.modalSubtitle}>
-              They'll receive an email with a link to join your organization.
+              Get an invite link to share with your team. They can use it to create an account and join your organization.
             </Text>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email Address *</Text>
-              <TextInput
-                style={styles.input}
-                value={inviteEmail}
-                onChangeText={setInviteEmail}
-                placeholder="email@example.com"
-                placeholderTextColor={COLORS.textSecondary}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Display Name (optional)</Text>
-              <TextInput
-                style={styles.input}
-                value={inviteDisplayName}
-                onChangeText={setInviteDisplayName}
-                placeholder="e.g., John Smith"
-                placeholderTextColor={COLORS.textSecondary}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Role</Text>
-              <View style={styles.roleSelector}>
-                <TouchableOpacity
-                  style={[
-                    styles.roleOption,
-                    inviteRole === 'user' && styles.roleOptionActive,
-                  ]}
-                  onPress={() => setInviteRole('user')}
-                >
-                  <Text
-                    style={[
-                      styles.roleOptionText,
-                      inviteRole === 'user' && styles.roleOptionTextActive,
-                    ]}
-                  >
-                    User
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.roleOption,
-                    inviteRole === 'admin' && styles.roleOptionActive,
-                  ]}
-                  onPress={() => setInviteRole('admin')}
-                >
-                  <Text
-                    style={[
-                      styles.roleOptionText,
-                      inviteRole === 'admin' && styles.roleOptionTextActive,
-                    ]}
-                  >
-                    Admin
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
 
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.modalCancelButton}
-                onPress={() => {
-                  setInviteModalVisible(false)
-                  setInviteEmail('')
-                  setInviteDisplayName('')
-                  setInviteRole('user')
-                }}
+                onPress={() => setInviteModalVisible(false)}
               >
                 <Text style={styles.modalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalInviteButton, inviting && styles.modalButtonDisabled]}
+                style={styles.modalInviteButton}
                 onPress={handleInviteUser}
-                disabled={inviting}
               >
-                <Text style={styles.modalInviteButtonText}>
-                  {inviting ? 'Sending...' : 'Send Invite'}
-                </Text>
+                <Text style={styles.modalInviteButtonText}>Copy Invite Link</Text>
               </TouchableOpacity>
             </View>
           </View>
