@@ -34,32 +34,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initialized: false,
   })
 
-  // Fetch user profile and organization with timeout
+  // Fetch user profile and organization
   const fetchUserData = useCallback(async (userId: string) => {
-    console.log('Fetching user data for:', userId)
     try {
-      // Fetch profile with timeout
-      const profilePromise = supabase
+      // Fetch profile
+      const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
         .single()
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 8000)
-      )
-
-      const { data: profile, error: profileError } = await Promise.race([
-        profilePromise,
-        timeoutPromise
-      ]) as any
-
       if (profileError) {
         console.error('Error fetching profile:', profileError)
         return { profile: null, organization: null }
       }
-
-      console.log('Profile loaded:', profile?.email)
 
       // Fetch organization
       const { data: organization, error: orgError } = await supabase
@@ -73,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { profile, organization: null }
       }
 
-      console.log('Organization loaded:', organization?.name)
       return { profile, organization }
     } catch (error) {
       console.error('Error in fetchUserData:', error)
@@ -119,18 +106,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Safety timeout to prevent infinite loading
+    // Safety timeout to prevent infinite loading (keeps session intact)
     const timeout = setTimeout(() => {
       console.warn('Auth initialization timed out - forcing initialized state')
-      setState({
-        session: null,
-        user: null,
-        profile: null,
-        organization: null,
-        loading: false,
-        initialized: true,
-      })
-    }, 5000)
+      setState(prev => ({ ...prev, loading: false, initialized: true }))
+    }, 8000)
 
     initializeAuth()
 
