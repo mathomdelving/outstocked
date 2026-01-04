@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "OutStock",
-    "slug": "outstock-app",
+    "name": "Outstocked",
+    "slug": "outstocked",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "scheme": "outstock",
+    "scheme": "outstocked",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.outstock.app",
+      "bundleIdentifier": "com.outstocked.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to track where inventory items are sold or given away."
       }
@@ -25,7 +25,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.outstock.app",
+      "package": "com.outstocked.app",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
