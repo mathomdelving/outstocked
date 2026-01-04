@@ -223,7 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Reset password
   const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'inventory://reset-password',
+      redirectTo: 'https://outstocked.vercel.app',
     })
 
     return { error }
