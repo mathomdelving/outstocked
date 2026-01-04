@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import React, { createContext, useContext, useEffect, useState } from 'react'
 import { Session, User, AuthError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { UserProfile, Organization } from '@/types/database.types'
@@ -8,7 +8,6 @@ interface AuthState {
   user: User | null
   profile: UserProfile | null
   organization: Organization | null
-  loading: boolean
   initialized: boolean
 }
 
@@ -30,156 +29,125 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user: null,
     profile: null,
     organization: null,
-    loading: true,
     initialized: false,
   })
 
-  // Fetch user profile and organization
-  const fetchUserData = useCallback(async (userId: string) => {
+  // Fetch user profile and organization (non-blocking helper)
+  const loadProfileData = async (userId: string) => {
     try {
-      // Fetch profile
       const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
         .single()
 
-      if (profileError) {
-        console.error('Error fetching profile:', profileError)
-        return { profile: null, organization: null }
+      if (profileError || !profile) {
+        console.log('No profile found for user:', userId)
+        return
       }
 
-      // Fetch organization
-      const { data: organization, error: orgError } = await supabase
+      const { data: organization } = await supabase
         .from('organizations')
         .select('*')
         .eq('id', profile.organization_id)
         .single()
 
-      if (orgError) {
-        console.error('Error fetching organization:', orgError)
-        return { profile, organization: null }
-      }
-
-      return { profile, organization }
+      setState(prev => ({
+        ...prev,
+        profile,
+        organization: organization || null,
+      }))
     } catch (error) {
-      console.error('Error in fetchUserData:', error)
-      return { profile: null, organization: null }
+      console.error('Error loading profile:', error)
     }
-  }, [])
+  }
 
-  // Initialize auth state
+  // Initialize auth on mount
   useEffect(() => {
-    let mounted = true
+    let isMounted = true
 
-    async function initializeAuth() {
+    const initialize = async () => {
       try {
-        console.log('Initializing auth...')
-        const { data: { session } } = await supabase.auth.getSession()
-        console.log('Got session:', session?.user?.email || 'no user')
+        // Get the current session
+        const { data: { session }, error } = await supabase.auth.getSession()
 
-        if (!mounted) return
+        if (error) {
+          console.error('Error getting session:', error)
+        }
+
+        if (!isMounted) return
 
         if (session?.user) {
-          // Set user state immediately
-          setState(prev => ({
-            ...prev,
+          setState({
             session,
             user: session.user,
-            loading: false,
+            profile: null,
+            organization: null,
             initialized: true,
-          }))
-
-          // Fetch profile data in background (non-blocking)
-          fetchUserData(session.user.id).then(({ profile, organization }) => {
-            if (mounted) {
-              console.log('Profile loaded:', profile?.display_name)
-              setState(prev => ({ ...prev, profile, organization }))
-            }
           })
+          // Load profile data in background
+          loadProfileData(session.user.id)
         } else {
           setState({
             session: null,
             user: null,
             profile: null,
             organization: null,
-            loading: false,
             initialized: true,
           })
         }
       } catch (error) {
-        console.error('Error initializing auth:', error)
-        if (mounted) {
-          setState(prev => ({ ...prev, loading: false, initialized: true }))
+        console.error('Auth initialization error:', error)
+        if (isMounted) {
+          setState(prev => ({ ...prev, initialized: true }))
         }
       }
     }
 
-    // Safety timeout to prevent infinite loading (keeps session intact)
-    const timeout = setTimeout(() => {
-      console.warn('Auth initialization timed out - forcing initialized state')
-      setState(prev => ({ ...prev, loading: false, initialized: true }))
-    }, 8000)
+    initialize()
 
-    initializeAuth()
-
-    // Listen for auth changes
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state change:', event, session?.user?.email)
-        if (!mounted) return
+      (event, session) => {
+        console.log('Auth event:', event)
 
-        if (event === 'SIGNED_IN' && session?.user) {
-          // Update user state IMMEDIATELY so redirects can happen
-          setState(prev => ({
-            ...prev,
-            session,
-            user: session.user,
-            loading: false,
-            initialized: true,
-          }))
+        if (!isMounted) return
 
-          // Then fetch profile data in background (non-blocking)
-          fetchUserData(session.user.id).then(({ profile, organization }) => {
-            if (mounted) {
-              setState(prev => ({ ...prev, profile, organization }))
-            }
-          })
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (session?.user) {
+            setState(prev => ({
+              ...prev,
+              session,
+              user: session.user,
+              initialized: true,
+            }))
+            loadProfileData(session.user.id)
+          }
         } else if (event === 'SIGNED_OUT') {
           setState({
             session: null,
             user: null,
             profile: null,
             organization: null,
-            loading: false,
             initialized: true,
           })
-        } else if (event === 'TOKEN_REFRESHED' && session) {
-          setState(prev => ({ ...prev, session }))
         }
       }
     )
 
     return () => {
-      mounted = false
-      clearTimeout(timeout)
+      isMounted = false
       subscription.unsubscribe()
     }
-  }, [fetchUserData])
+  }, [])
 
-  // Sign in with email and password
-  // Note: We don't set global loading state here - individual pages manage their own loading
-  // The onAuthStateChange listener will handle updating user/session state
+  // Sign in
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error }
   }
 
-  // Sign up and create organization (first user becomes admin)
+  // Sign up with new organization
   const signUp = async (
     email: string,
     password: string,
@@ -196,11 +164,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       },
     })
-
     return { error }
   }
 
-  // Sign up with invite (join existing organization)
+  // Sign up with invite
   const signUpWithInvite = async (
     email: string,
     password: string,
@@ -217,7 +184,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       },
     })
-
     return { error }
   }
 
@@ -231,16 +197,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: 'https://outstocked.vercel.app',
     })
-
     return { error }
   }
 
-  // Refresh profile data
+  // Refresh profile
   const refreshProfile = async () => {
-    if (!state.user) return
-
-    const { profile, organization } = await fetchUserData(state.user.id)
-    setState(prev => ({ ...prev, profile, organization }))
+    if (state.user) {
+      await loadProfileData(state.user.id)
+    }
   }
 
   const value: AuthContextType = {
