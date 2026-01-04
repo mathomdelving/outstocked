@@ -104,7 +104,7 @@ export default function AdminUsersScreen() {
             display_name: inviteDisplayName.trim() || null,
             invited_role: inviteRole,
           },
-          emailRedirectTo: 'https://outstocked.vercel.app'
+          emailRedirectTo: `https://outstocked.vercel.app/invite?org=${profile.organization_id}`
         },
       })
 
