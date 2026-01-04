@@ -106,6 +106,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Safety timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (mounted) {
+        console.warn('Auth initialization timed out')
+        setState(prev => {
+          if (!prev.initialized) {
+            return { ...prev, loading: false, initialized: true }
+          }
+          return prev
+        })
+      }
+    }, 10000)
+
     initializeAuth()
 
     // Listen for auth changes
@@ -140,6 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false
+      clearTimeout(timeout)
       subscription.unsubscribe()
     }
   }, [fetchUserData])
