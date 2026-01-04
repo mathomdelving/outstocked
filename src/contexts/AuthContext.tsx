@@ -74,19 +74,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     async function initializeAuth() {
       try {
+        console.log('Initializing auth...')
         const { data: { session } } = await supabase.auth.getSession()
+        console.log('Got session:', session?.user?.email || 'no user')
 
         if (!mounted) return
 
         if (session?.user) {
-          const { profile, organization } = await fetchUserData(session.user.id)
-          setState({
+          // Set user state immediately
+          setState(prev => ({
+            ...prev,
             session,
             user: session.user,
-            profile,
-            organization,
             loading: false,
             initialized: true,
+          }))
+
+          // Fetch profile data in background (non-blocking)
+          fetchUserData(session.user.id).then(({ profile, organization }) => {
+            if (mounted) {
+              console.log('Profile loaded:', profile?.display_name)
+              setState(prev => ({ ...prev, profile, organization }))
+            }
           })
         } else {
           setState({
@@ -117,17 +126,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state change:', event, session?.user?.email)
         if (!mounted) return
 
         if (event === 'SIGNED_IN' && session?.user) {
-          const { profile, organization } = await fetchUserData(session.user.id)
-          setState({
+          // Update user state IMMEDIATELY so redirects can happen
+          setState(prev => ({
+            ...prev,
             session,
             user: session.user,
-            profile,
-            organization,
             loading: false,
             initialized: true,
+          }))
+
+          // Then fetch profile data in background (non-blocking)
+          fetchUserData(session.user.id).then(({ profile, organization }) => {
+            if (mounted) {
+              setState(prev => ({ ...prev, profile, organization }))
+            }
           })
         } else if (event === 'SIGNED_OUT') {
           setState({
