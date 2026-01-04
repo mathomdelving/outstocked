@@ -22,23 +22,35 @@ export default function InviteScreen() {
   const [orgName, setOrgName] = useState<string | null>(null)
   const [loadingOrg, setLoadingOrg] = useState(true)
   const [checkingAuth, setCheckingAuth] = useState(true)
+  const [linkExpired, setLinkExpired] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [loading, setLoading] = useState(false)
   const [isSignUp, setIsSignUp] = useState(true)
 
-  // Get org ID from URL params (expo-router) or parse URL directly (web fallback)
+  // Get org ID from URL params and check for Supabase errors in hash
   useEffect(() => {
     let orgId = params.org
 
-    // Web fallback: parse URL directly
-    if (!orgId && typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search)
-      orgId = urlParams.get('org') || undefined
-      console.log('Parsed org from URL:', orgId)
+    if (typeof window !== 'undefined') {
+      // Parse org from URL search params as fallback
+      if (!orgId) {
+        const urlParams = new URLSearchParams(window.location.search)
+        orgId = urlParams.get('org') || undefined
+      }
+
+      // Check for Supabase error in hash fragment (e.g., expired link)
+      const hash = window.location.hash
+      if (hash.includes('error=') || hash.includes('error_code=')) {
+        console.log('Supabase error in URL:', hash)
+        if (hash.includes('otp_expired') || hash.includes('access_denied')) {
+          setLinkExpired(true)
+        }
+      }
     }
 
+    console.log('Org ID found:', orgId)
     if (orgId) {
       setOrg(orgId)
     } else {
@@ -176,13 +188,35 @@ export default function InviteScreen() {
     )
   }
 
-  if (!org || !orgName) {
+  if (!org) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
           <Text style={styles.title}>Invalid Invite</Text>
           <Text style={styles.subtitle}>
-            This invite link is invalid or has expired.
+            This invite link is missing the organization information.
+          </Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => router.replace('/(auth)/login')}
+          >
+            <Text style={styles.buttonText}>Go to Login</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (!orgName) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Organization Not Found</Text>
+          <Text style={styles.subtitle}>
+            We couldn't find this organization. The invite may be outdated.
+          </Text>
+          <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginTop: 8, textAlign: 'center' }}>
+            Org ID: {org}
           </Text>
           <TouchableOpacity
             style={styles.button}
@@ -207,6 +241,13 @@ export default function InviteScreen() {
             <Text style={styles.subtitle}>
               You've been invited to join {orgName} on Outstocked
             </Text>
+            {linkExpired && (
+              <View style={{ backgroundColor: '#FEF3C7', padding: 12, borderRadius: 8, marginTop: 16 }}>
+                <Text style={{ color: '#92400E', fontSize: 14, textAlign: 'center' }}>
+                  The email link has expired. Please create an account or sign in below.
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.tabs}>
