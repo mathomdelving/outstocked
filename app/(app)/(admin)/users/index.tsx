@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
-  TextInput,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, router, Stack } from 'expo-router'
@@ -35,10 +34,7 @@ export default function AdminUsersScreen() {
 
   // Invite modal state
   const [inviteModalVisible, setInviteModalVisible] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteDisplayName, setInviteDisplayName] = useState('')
-  const [inviteRole, setInviteRole] = useState<'admin' | 'user'>('user')
-  const [inviting, setInviting] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   // Edit role modal state
   const [editRoleModalVisible, setEditRoleModalVisible] = useState(false)
@@ -80,44 +76,22 @@ export default function AdminUsersScreen() {
     setRefreshing(false)
   }
 
-  const handleInviteUser = async () => {
-    if (!inviteEmail.trim()) {
-      alert('Please enter an email address')
-      return
-    }
+  const getInviteLink = () => {
+    if (!profile?.organization_id) return ''
+    return `https://outstocked.vercel.app/invite?org=${profile.organization_id}`
+  }
 
-    if (!profile?.organization_id) {
-      alert('Organization not found')
-      return
-    }
-
-    setInviting(true)
+  const handleCopyLink = async () => {
+    const inviteLink = getInviteLink()
     try {
-      // Send magic link email
-      const { error } = await supabase.auth.signInWithOtp({
-        email: inviteEmail.trim(),
-        options: {
-          data: {
-            organization_id: profile.organization_id,
-            display_name: inviteDisplayName.trim() || null,
-            invited_role: inviteRole,
-          },
-          emailRedirectTo: `https://outstocked.vercel.app/invite?org=${profile.organization_id}`
-        },
-      })
-
-      if (error) throw error
-
-      alert(`Invitation sent to ${inviteEmail}!`)
-      setInviteModalVisible(false)
-      setInviteEmail('')
-      setInviteDisplayName('')
-      setInviteRole('user')
-    } catch (error) {
-      console.error('Error inviting user:', error)
-      alert('Failed to send invitation: ' + (error as Error).message)
-    } finally {
-      setInviting(false)
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(inviteLink)
+        setLinkCopied(true)
+        setTimeout(() => setLinkCopied(false), 3000)
+      }
+    } catch (e) {
+      // Clipboard might fail, show alert with link as fallback
+      alert(`Copy this link:\n\n${inviteLink}`)
     }
   }
 
@@ -251,31 +225,13 @@ export default function AdminUsersScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Invite Team Member</Text>
             <Text style={styles.modalSubtitle}>
-              They'll receive an email with a link to join.
+              Share this link with your team member. They'll create their own account and join your organization.
             </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email Address *</Text>
-              <TextInput
-                style={styles.input}
-                value={inviteEmail}
-                onChangeText={setInviteEmail}
-                placeholder="email@example.com"
-                placeholderTextColor={COLORS.textSecondary}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Name (optional)</Text>
-              <TextInput
-                style={styles.input}
-                value={inviteDisplayName}
-                onChangeText={setInviteDisplayName}
-                placeholder="e.g., John Smith"
-                placeholderTextColor={COLORS.textSecondary}
-              />
+            <View style={styles.linkContainer}>
+              <Text style={styles.linkText} numberOfLines={2} ellipsizeMode="middle">
+                {getInviteLink()}
+              </Text>
             </View>
 
             <View style={styles.modalActions}>
@@ -283,19 +239,17 @@ export default function AdminUsersScreen() {
                 style={styles.modalCancelButton}
                 onPress={() => {
                   setInviteModalVisible(false)
-                  setInviteEmail('')
-                  setInviteDisplayName('')
+                  setLinkCopied(false)
                 }}
               >
-                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                <Text style={styles.modalCancelButtonText}>Done</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalInviteButton, inviting && styles.modalButtonDisabled]}
-                onPress={handleInviteUser}
-                disabled={inviting}
+                style={[styles.modalInviteButton, linkCopied && styles.modalButtonCopied]}
+                onPress={handleCopyLink}
               >
                 <Text style={styles.modalInviteButtonText}>
-                  {inviting ? 'Sending...' : 'Send Invite'}
+                  {linkCopied ? 'Copied!' : 'Copy Link'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -540,25 +494,6 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginBottom: 20,
   },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: COLORS.text,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
   roleSelector: {
     gap: 8,
   },
@@ -612,10 +547,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  modalButtonCopied: {
+    backgroundColor: '#22c55e',
+  },
   modalInviteButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  linkContainer: {
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  linkText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontFamily: 'monospace',
   },
   modalSaveButton: {
     flex: 1,
