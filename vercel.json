@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm install && npx expo export --platform web && cp -r public/* dist/",
+  "buildCommand": "npm install && npx expo export --platform web && cp -r public/* dist/ && node scripts/inject-meta.js",
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": null,
