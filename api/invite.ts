@@ -1,58 +1,63 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 
-// Server-side Supabase client with service role
-const supabaseAdmin = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
 
-// Regular client for verifying user tokens
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
-)
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
+  }
 
-export async function POST(request: Request) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
   try {
-    // Get authorization header
-    const authHeader = request.headers.get('Authorization')
+    const authHeader = req.headers.authorization
     if (!authHeader?.startsWith('Bearer ')) {
-      return Response.json({ error: 'Missing authorization' }, { status: 401 })
+      return res.status(401).json({ error: 'Missing authorization' })
     }
 
     const token = authHeader.replace('Bearer ', '')
 
-    // Verify the user
+    // Clients
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!
+    const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+
+    // Verify user
     const { data: { user }, error: userError } = await supabase.auth.getUser(token)
     if (userError || !user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
+      return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    // Get user's profile to verify admin status
-    const { data: profile, error: profileError } = await supabase
+    // Check admin status
+    const { data: profile } = await supabase
       .from('user_profiles')
       .select('role, organization_id')
       .eq('id', user.id)
       .single()
 
-    if (profileError || !profile) {
-      return Response.json({ error: 'Profile not found' }, { status: 404 })
+    if (!profile || profile.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can invite users' })
     }
 
-    if (profile.role !== 'admin') {
-      return Response.json({ error: 'Only admins can invite users' }, { status: 403 })
-    }
-
-    // Parse request body
-    const { emails } = await request.json()
-
+    // Parse emails
+    const { emails } = req.body
     if (!emails || !Array.isArray(emails) || emails.length === 0) {
-      return Response.json({ error: 'Please provide at least one email' }, { status: 400 })
+      return res.status(400).json({ error: 'Please provide at least one email' })
     }
 
     if (emails.length > 10) {
-      return Response.json({ error: 'Maximum 10 invites at a time' }, { status: 400 })
+      return res.status(400).json({ error: 'Maximum 10 invites at a time' })
     }
 
     // Send invites
@@ -91,15 +96,12 @@ export async function POST(request: Request) {
     const successful = results.filter(r => r.success).length
     const failed = results.filter(r => !r.success).length
 
-    return Response.json({
+    return res.status(200).json({
       message: `Sent ${successful} invite(s)${failed > 0 ? `, ${failed} failed` : ''}`,
       results,
     })
   } catch (error) {
     console.error('Invite error:', error)
-    return Response.json(
-      { error: (error as Error).message || 'Internal server error' },
-      { status: 500 }
-    )
+    return res.status(500).json({ error: 'Internal server error' })
   }
 }
