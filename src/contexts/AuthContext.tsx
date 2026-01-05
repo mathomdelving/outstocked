@@ -9,6 +9,7 @@ interface AuthState {
   profile: UserProfile | null
   organization: Organization | null
   initialized: boolean
+  needsPasswordSetup: boolean
 }
 
 interface AuthContextType extends AuthState {
@@ -18,6 +19,7 @@ interface AuthContextType extends AuthState {
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>
   refreshProfile: () => Promise<void>
+  completePasswordSetup: (password: string, displayName?: string) => Promise<{ error: Error | null }>
   isAdmin: boolean
 }
 
@@ -30,22 +32,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile: null,
     organization: null,
     initialized: false,
+    needsPasswordSetup: false,
   })
 
   // Fetch user profile and organization (non-blocking helper)
   const loadProfileData = async (userId: string) => {
     try {
-      let { data: profile, error: profileError } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
         .single()
 
-      // If no profile exists, try to create one from user metadata
+      // If no profile exists, check if this is an invited user
       if (profileError || !profile) {
-        console.log('No profile found, attempting to create from metadata...')
+        console.log('No profile found, checking if invited user...')
         const { data: { user } } = await supabase.auth.getUser()
 
+        // If user was invited (has invited_by in metadata), they need to complete setup
+        if (user?.user_metadata?.invited_by) {
+          console.log('Invited user needs to complete password setup')
+          setState(prev => ({
+            ...prev,
+            needsPasswordSetup: true,
+          }))
+          return
+        }
+
+        // For non-invited users with org metadata, auto-create profile
         if (user?.user_metadata?.organization_id) {
           const { data: newProfile, error: createError } = await supabase
             .from('user_profiles')
@@ -63,14 +77,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.error('Error creating profile:', createError)
             return
           }
-          profile = newProfile
-          console.log('Created profile:', profile)
-        } else {
-          console.log('No organization_id in user metadata')
+
+          const { data: organization } = await supabase
+            .from('organizations')
+            .select('*')
+            .eq('id', newProfile.organization_id)
+            .single()
+
+          setState(prev => ({
+            ...prev,
+            profile: newProfile,
+            organization: organization || null,
+            needsPasswordSetup: false,
+          }))
           return
         }
+
+        console.log('No organization_id in user metadata')
+        return
       }
 
+      // Profile exists - load organization
       const { data: organization } = await supabase
         .from('organizations')
         .select('*')
@@ -81,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         profile,
         organization: organization || null,
+        needsPasswordSetup: false,
       }))
     } catch (error) {
       console.error('Error loading profile:', error)
@@ -232,6 +260,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Complete password setup for invited users
+  const completePasswordSetup = async (password: string, displayName?: string) => {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return { error: new Error('Not authenticated') }
+      }
+
+      // Update password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password,
+        data: {
+          display_name: displayName || user.user_metadata?.display_name || user.email?.split('@')[0],
+        },
+      })
+
+      if (updateError) {
+        return { error: new Error(updateError.message) }
+      }
+
+      // Create profile
+      const orgId = user.user_metadata?.organization_id
+      if (!orgId) {
+        return { error: new Error('No organization found') }
+      }
+
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .insert({
+          id: user.id,
+          organization_id: orgId,
+          email: user.email,
+          display_name: displayName || user.user_metadata?.display_name || user.email?.split('@')[0],
+          role: user.user_metadata?.invited_role || 'user',
+        })
+
+      if (profileError) {
+        return { error: new Error(profileError.message) }
+      }
+
+      // Clear needsPasswordSetup and load profile
+      setState(prev => ({ ...prev, needsPasswordSetup: false }))
+      await loadProfileData(user.id)
+
+      return { error: null }
+    } catch (error) {
+      return { error: error as Error }
+    }
+  }
+
   const value: AuthContextType = {
     ...state,
     signIn,
@@ -240,6 +318,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
     resetPassword,
     refreshProfile,
+    completePasswordSetup,
     isAdmin: state.profile?.role === 'admin',
   }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   View,
   Text,
@@ -12,51 +12,28 @@ import {
 } from 'react-native'
 import { router } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import { COLORS } from '@/lib/constants'
 
 export default function SetPasswordScreen() {
+  const { user, needsPasswordSetup, completePasswordSetup } = useAuth()
+
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
 
-  // Check if user arrived via invite link
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  // If user doesn't need setup, redirect away
+  if (!needsPasswordSetup && user) {
+    router.replace('/(app)/(tabs)')
+    return null
+  }
 
-        if (sessionError) {
-          console.error('Session error:', sessionError)
-          setError('Invalid or expired invite link. Please request a new invitation.')
-          setLoading(false)
-          return
-        }
-
-        if (session?.user) {
-          setUserEmail(session.user.email || null)
-          // Pre-fill display name from metadata if available
-          const metadata = session.user.user_metadata
-          if (metadata?.display_name) {
-            setDisplayName(metadata.display_name)
-          }
-        } else {
-          setError('Invalid or expired invite link. Please request a new invitation.')
-        }
-      } catch (e) {
-        console.error('Error checking session:', e)
-        setError('Something went wrong. Please try again.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    checkSession()
-  }, [])
+  // If not authenticated at all, go to login
+  if (!user) {
+    router.replace('/(auth)/login')
+    return null
+  }
 
   const handleSetPassword = async () => {
     if (!password || !confirmPassword) {
@@ -76,57 +53,16 @@ export default function SetPasswordScreen() {
 
     setSubmitting(true)
 
-    try {
-      // Update the user's password
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
-        data: {
-          display_name: displayName || userEmail?.split('@')[0],
-        },
-      })
+    const { error } = await completePasswordSetup(password, displayName || undefined)
 
-      if (updateError) {
-        throw updateError
-      }
-
-      // Password set successfully - the auth state listener will handle navigation
-      Alert.alert('Success', 'Your password has been set. Welcome!', [
-        { text: 'Continue', onPress: () => router.replace('/(app)/(tabs)') }
-      ])
-    } catch (e) {
-      console.error('Error setting password:', e)
-      Alert.alert('Error', (e as Error).message || 'Failed to set password')
-    } finally {
+    if (error) {
       setSubmitting(false)
+      Alert.alert('Error', error.message || 'Failed to set password')
+      return
     }
-  }
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
-      </SafeAreaView>
-    )
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Invitation Error</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => router.replace('/(auth)/login')}
-          >
-            <Text style={styles.buttonText}>Go to Login</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    )
+    // Success - redirect to main app
+    router.replace('/(app)/(tabs)')
   }
 
   return (
@@ -137,13 +73,13 @@ export default function SetPasswordScreen() {
       >
         <View style={styles.content}>
           <View style={styles.header}>
-            <Text style={styles.title}>Set Your Password</Text>
+            <Text style={styles.title}>Complete Your Account</Text>
             <Text style={styles.subtitle}>
-              Welcome! Create a password to complete your account setup.
+              Set a password so you can sign in later.
             </Text>
-            {userEmail && (
+            {user.email && (
               <View style={styles.emailBadge}>
-                <Text style={styles.emailText}>{userEmail}</Text>
+                <Text style={styles.emailText}>{user.email}</Text>
               </View>
             )}
           </View>
@@ -208,16 +144,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    color: COLORS.textSecondary,
-    marginTop: 16,
-    fontSize: 16,
-  },
   keyboardView: {
     flex: 1,
   },
@@ -258,12 +184,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
     fontWeight: '500',
-  },
-  errorText: {
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginBottom: 24,
   },
   form: {
     gap: 16,
