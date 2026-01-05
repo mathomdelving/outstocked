@@ -37,10 +37,10 @@ export default function AdminScreen() {
       route: '/(app)/(admin)/users',
     },
     {
-      icon: '🔗',
-      title: 'Assignments',
-      description: 'Assign items to users or locations',
-      route: '/(app)/(admin)/assignments',
+      icon: '📋',
+      title: 'Requests',
+      description: 'Review and approve inventory requests',
+      route: '/(app)/(admin)/requests',
     },
   ]
 

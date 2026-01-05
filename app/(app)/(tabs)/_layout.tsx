@@ -10,6 +10,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
     inventory: '📦',
     profile: '👤',
     admin: '⚙️',
+    'my-locations': '📍',
   }
 
   return (
@@ -59,6 +60,14 @@ export default function TabsLayout() {
         options={{
           title: 'Inventory',
           tabBarIcon: ({ focused }) => <TabIcon name="inventory" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="my-locations"
+        options={{
+          title: 'My Locations',
+          tabBarIcon: ({ focused }) => <TabIcon name="my-locations" focused={focused} />,
+          href: !isAdmin ? '/(app)/(tabs)/my-locations' : null,
         }}
       />
       <Tabs.Screen
