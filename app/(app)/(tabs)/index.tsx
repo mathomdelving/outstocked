@@ -24,6 +24,7 @@ interface DashboardStats {
 interface LocationWithAssignments extends Location {
   totalAssigned: number
   itemCount: number
+  pendingRequests: number
 }
 
 interface ActivityWithDetails extends LocationHistory {
@@ -88,22 +89,31 @@ export default function DashboardScreen() {
         .eq('organization_id', profile.organization_id)
         .order('name')
 
-      // Get assignment totals for each location
+      // Get assignment totals and pending requests for each location
       const locationsWithAssignments: LocationWithAssignments[] = await Promise.all(
         (locationsData || []).map(async (location) => {
-          const { data: assignments } = await supabase
-            .from('item_assignments')
-            .select('quantity_assigned')
-            .eq('location_id', location.id)
-            .is('revoked_at', null)
+          const [assignmentsResult, requestsResult] = await Promise.all([
+            supabase
+              .from('item_assignments')
+              .select('quantity_assigned')
+              .eq('location_id', location.id)
+              .is('revoked_at', null),
+            supabase
+              .from('inventory_requests')
+              .select('*', { count: 'exact', head: true })
+              .eq('location_id', location.id)
+              .eq('status', 'pending'),
+          ])
 
-          const totalAssigned = (assignments || []).reduce(
+          const assignments = assignmentsResult.data || []
+          const totalAssigned = assignments.reduce(
             (sum, a) => sum + (a.quantity_assigned || 0),
             0
           )
-          const itemCount = assignments?.length || 0
+          const itemCount = assignments.length
+          const pendingRequests = requestsResult.count || 0
 
-          return { ...location, totalAssigned, itemCount }
+          return { ...location, totalAssigned, itemCount, pendingRequests }
         })
       )
       setLocations(locationsWithAssignments)
@@ -427,9 +437,17 @@ export default function DashboardScreen() {
                     {location.itemCount} item{location.itemCount !== 1 ? 's' : ''} assigned
                   </Text>
                 </View>
-                <View style={styles.locationStats}>
-                  <Text style={styles.locationQuantity}>{location.totalAssigned.toLocaleString()}</Text>
-                  <Text style={styles.locationQuantityLabel}>units</Text>
+                <View style={styles.locationStatsRow}>
+                  {location.pendingRequests > 0 && (
+                    <View style={styles.locationRequestsBox}>
+                      <Text style={styles.locationRequestsCount}>{location.pendingRequests}</Text>
+                      <Text style={styles.locationRequestsLabel}>requests</Text>
+                    </View>
+                  )}
+                  <View style={styles.locationStats}>
+                    <Text style={styles.locationQuantity}>{location.totalAssigned.toLocaleString()}</Text>
+                    <Text style={styles.locationQuantityLabel}>units</Text>
+                  </View>
                 </View>
               </TouchableOpacity>
             ))
@@ -666,6 +684,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
   },
+  locationStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   locationStats: {
     alignItems: 'center',
     backgroundColor: COLORS.primary + '15',
@@ -681,6 +704,22 @@ const styles = StyleSheet.create({
   locationQuantityLabel: {
     fontSize: 11,
     color: COLORS.primary,
+  },
+  locationRequestsBox: {
+    alignItems: 'center',
+    backgroundColor: COLORS.warning + '15',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  locationRequestsCount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.warning,
+  },
+  locationRequestsLabel: {
+    fontSize: 11,
+    color: COLORS.warning,
   },
   // Request cards
   requestCard: {
